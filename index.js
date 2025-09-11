@@ -27,7 +27,7 @@ const upload = multer({ storage: storage });
 
 // Middlewares
 app.use(cors({
-  origin: ["http://localhost:5173", "https://esim-frontend.vercel.app"],
+  origin: ["http://localhost:5173", ""],
   methods: ["GET", "POST", "PUT", "DELETE"],
   credentials: true
 }));
