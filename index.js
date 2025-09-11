@@ -50,6 +50,10 @@ app.use('/api/v1/kyc', upload.fields([
 ]), kycRoute);
 app.use('/api/v1/esim', esimRoute);
 app.use('/api/v1/admin', adminRoute);
+app.get("/", (req, res) => {
+  res.send("Server is running! 👋");
+});
+
 
 // Add this before your routes
 app.get('/api/health', (req, res) => {
