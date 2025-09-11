@@ -48,44 +48,180 @@ module.exports.createuser = async (req, res) => {
     });
   }
 };
-
 module.exports.Loginuser = async (req, res) => {
   try {
+    console.log('=== LOGIN ATTEMPT STARTED ===');
+    console.log('Request body:', req.body);
+    
+    // Debug environment variables
+    console.log('Environment check:');
+    console.log('JWT_SECRET exists:', !!process.env.JWT_SECRET);
+    console.log('JWT_SECRET length:', process.env.JWT_SECRET ? process.env.JWT_SECRET.length : 0);
+    console.log('DATABASE_URL exists:', !!process.env.DATABASE_URL);
+    console.log('PORT:', process.env.PORT);
+    
+    // Check if JWT secret is configured
+    if (!process.env.JWT_SECRET || process.env.JWT_SECRET.trim() === '') {
+      console.error('ERROR: JWT_SECRET is not configured or is empty');
+      return res.status(500).json({
+        success: false,
+        message: 'Server configuration error',
+        error: 'JWT secret not configured',
+        debug: {
+          hasJwtSecret: !!process.env.JWT_SECRET,
+          jwtSecretLength: process.env.JWT_SECRET ? process.env.JWT_SECRET.length : 0,
+          allEnvVars: Object.keys(process.env)
+        }
+      });
+    }
+    
     const { email, password } = req.body;
+    
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Email and password are required"
+      });
+    }
 
+    // Check database connection state
+    const dbState = mongoose.connection.readyState;
+    const dbStates = ['disconnected', 'connected', 'connecting', 'disconnecting'];
+    console.log('Database state:', dbState, '(', dbStates[dbState] || 'unknown', ')');
+    
+    if (dbState !== 1) {
+      console.error('ERROR: Database not connected. State:', dbState);
+      return res.status(500).json({
+        success: false,
+        message: 'Database connection issue',
+        dbState: dbState,
+        dbStatus: dbStates[dbState] || 'unknown'
+      });
+    }
+
+    console.log('Looking for user with email:', email);
     const user = await User.findOne({ email });
-
+    console.log('User found:', user ? `Yes (${user.email})` : 'No');
+    
     if (!user) {
       return res.status(401).json({
+        success: false,
         message: "Invalid email or password"
       });
     }
 
+    // Check if user has password method
+    if (typeof user.comparePassword !== 'function') {
+      console.error('ERROR: User model missing comparePassword method');
+      console.log('User object methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(user)));
+      return res.status(500).json({
+        success: false,
+        message: 'Server error: User model configuration issue'
+      });
+    }
+
     // Check password
+    console.log('Checking password...');
     const isPasswordValid = await user.comparePassword(password);
+    console.log('Password valid:', isPasswordValid);
+    
     if (!isPasswordValid) {
       return res.status(401).json({
+        success: false,
         message: 'Invalid email or password',
       });
     }
 
+    // Generate token
+    let token;
+    try {
+      console.log('Generating JWT token...');
+      token = generateToken(user);
+      console.log('Token generated successfully');
+    } catch (tokenError) {
+      console.error('Token generation error:', tokenError);
+      return res.status(500).json({
+        success: false,
+        message: 'Login failed - token error',
+        error: tokenError.message
+      });
+    }
+    
+    // Successful login response
+    console.log('=== LOGIN SUCCESSFUL ===');
     res.status(200).json({
+      success: true,
       message: 'Login successful',
       data: {
         _id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
-        token: generateToken(user)
+        token: token
       }
     });
   } catch (error) {
+    console.error('=== LOGIN ERROR ===');
+    console.error('Error name:', error.name);
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    
+    // More specific error messages
+    let errorMessage = 'Login failed';
+    if (error.name === 'MongoNetworkError') {
+      errorMessage = 'Database connection error';
+    } else if (error.name === 'ValidationError') {
+      errorMessage = 'Data validation error';
+    } else if (error.name === 'CastError') {
+      errorMessage = 'Data format error';
+    }
+    
     res.status(500).json({
-      message: 'Login failed',
-      error: error.message
+      success: false,
+      message: errorMessage,
+      error: error.message,
+      // Only include stack trace in development
+      ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
     });
   }
 };
+// module.exports.Loginuser = async (req, res) => {
+//   try {
+//     const { email, password } = req.body;
+
+//     const user = await User.findOne({ email });
+
+//     if (!user) {
+//       return res.status(401).json({
+//         message: "Invalid email or password"
+//       });
+//     }
+
+//     // Check password
+//     const isPasswordValid = await user.comparePassword(password);
+//     if (!isPasswordValid) {
+//       return res.status(401).json({
+//         message: 'Invalid email or password',
+//       });
+//     }
+
+//     res.status(200).json({
+//       message: 'Login successful',
+//       data: {
+//         _id: user._id,
+//         name: user.name,
+//         email: user.email,
+//         role: user.role,
+//         token: generateToken(user)
+//       }
+//     });
+//   } catch (error) {
+//     res.status(500).json({
+//       message: 'Login failed',
+//       error: error.message
+//     });
+//   }
+// };
 
 exports.verifyToken = async (req, res) => {
   try {
