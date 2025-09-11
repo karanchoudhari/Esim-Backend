@@ -3,7 +3,7 @@ const cors = require('cors');
 const app = express();
 const path = require('path');
 const multer = require('multer');
-
+const mongoose = require('mongoose');
 const userRoute = require('./routes/user');
 const kycRoute = require('./routes/kyc.js');
 const esimRoute = require('./routes/esim.js');
