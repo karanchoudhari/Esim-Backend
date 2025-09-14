@@ -26,19 +26,11 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 // Middlewares
-const cors = require("cors");
-
-app.use(
-  cors({
-    origin: [
-      "http://localhost:5173",
-      "https://esim1.netlify.app"
-    ],
-    methods: ["GET", "POST", "PUT", "DELETE"],
-    credentials: true,
-  })
-);
-
+app.use(cors({
+  origin: ["https://esim1.netlify.app"],
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  credentials: true
+}));
 
 
 app.use(express.json());
@@ -58,10 +50,6 @@ app.use('/api/v1/kyc', upload.fields([
 ]), kycRoute);
 app.use('/api/v1/esim', esimRoute);
 app.use('/api/v1/admin', adminRoute);
-app.get("/", (req, res) => {
-  res.send("Server is running! 👋");
-});
-
 
 
 app.listen(PORT, () => {
