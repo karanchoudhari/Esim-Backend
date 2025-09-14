@@ -26,11 +26,19 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 // Middlewares
-app.use(cors({
-  origin: ["http://localhost:5173"],
-  methods: ["GET", "POST", "PUT", "DELETE"],
-  credentials: true
-}));
+const cors = require("cors");
+
+app.use(
+  cors({
+    origin: [
+      "http://localhost:5173",
+      "https://esim1.netlify.app"
+    ],
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    credentials: true,
+  })
+);
+
 
 
 app.use(express.json());
@@ -51,27 +59,6 @@ app.use('/api/v1/kyc', upload.fields([
 app.use('/api/v1/esim', esimRoute);
 app.use('/api/v1/admin', adminRoute);
 
-// Add this before your routes
-app.get('/api/health', (req, res) => {
-  const dbState = mongoose.connection.readyState;
-  const dbStates = {
-    0: 'disconnected',
-    1: 'connected', 
-    2: 'connecting',
-    3: 'disconnecting'
-  };
-  
-  res.json({
-    status: dbState === 1 ? 'healthy' : 'unhealthy',
-    database: {
-      state: dbState,
-      status: dbStates[dbState] || 'unknown',
-      connected: dbState === 1
-    },
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
-  });
-});
 
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);

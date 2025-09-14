@@ -52,13 +52,13 @@ module.exports.createuser = async (req, res) => {
 module.exports.Loginuser = async (req, res) => {
   try {
     console.log('=== LOGIN ATTEMPT STARTED ===');
-    console.log('Request body:', req.body);
+    // console.log('Request body:', req.body);
     
     // Debug environment variables
     console.log('Environment check:');
     console.log('JWT_SECRET exists:', !!process.env.JWT_SECRET);
     console.log('JWT_SECRET length:', process.env.JWT_SECRET ? process.env.JWT_SECRET.length : 0);
-    console.log('DATABASE_URL exists:', !!process.env.DATABASE_URL);
+    // console.log('DATABASE_URL exists:', !!process.env.DATABASE_URL);
     console.log('PORT:', process.env.PORT);
     
     // Check if JWT secret is configured
@@ -77,6 +77,7 @@ module.exports.Loginuser = async (req, res) => {
     }
     
     const { email, password } = req.body;
+    console.log("login ",req.body);
     
     if (!email || !password) {
       return res.status(400).json({
