@@ -5,41 +5,46 @@ const { simulateSMDP } = require('../services/smdpService');
 
 exports.getUsers = async (req, res) => {
   try {
-    const users = await User.find().select('-password');
+    const users = await User.find().select('-password').sort({ createdAt: -1 });
     res.status(200).json(users);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching users', error: error.message });
   }
 };
 
-// ADD THIS FUNCTION - Get all KYC submissions
+// Get all KYC submissions with user details
 exports.getKYCSubmissions = async (req, res) => {
   try {
+    // console.log('Fetching KYC submissions...'); // Debug log
+    
     const kycSubmissions = await KYC.find()
       .populate('userId', 'name email')
       .sort({ createdAt: -1 });
     
+    // console.log(`Found ${kycSubmissions.length} KYC submissions`); // Debug log
+    
     res.status(200).json(kycSubmissions);
   } catch (error) {
+    console.error('Error fetching KYC submissions:', error);
     res.status(500).json({ message: 'Error fetching KYC submissions', error: error.message });
   }
 };
 
 exports.approveKYC = async (req, res) => {
   try {
-    const { kycId } = req.params; // Change from userId to kycId
+    const { kycId } = req.params;
     const { status } = req.body;
     
-    if (!['approved', 'rejected'].includes(status)) {
+    if (!['approved', 'rejected', 'pending'].includes(status)) {
       return res.status(400).json({ message: 'Invalid status' });
     }
     
-    // Update KYC status using KYC ID
+    // Update KYC status
     const kyc = await KYC.findByIdAndUpdate(
-      kycId, // Use kycId instead of finding by userId
+      kycId,
       { status },
       { new: true }
-    );
+    ).populate('userId', 'name email');
     
     if (!kyc) {
       return res.status(404).json({ message: 'KYC record not found' });
@@ -47,12 +52,15 @@ exports.approveKYC = async (req, res) => {
     
     // Update user KYC status
     await User.findByIdAndUpdate(
-      kyc.userId, // Use the userId from the KYC document
+      kyc.userId,
       { kycStatus: status },
       { new: true }
     );
     
-    res.status(200).json({ message: `KYC ${status} successfully` });
+    res.status(200).json({ 
+      message: `KYC ${status} successfully`,
+      kyc 
+    });
   } catch (error) {
     res.status(500).json({ message: 'Error updating KYC status', error: error.message });
   }
@@ -70,7 +78,6 @@ exports.getESIMRequests = async (req, res) => {
   }
 };
 
-// In your admin controller - updateESIMStatus function
 exports.updateESIMStatus = async (req, res) => {
   try {
     const { esimId } = req.params;
@@ -89,15 +96,14 @@ exports.updateESIMStatus = async (req, res) => {
     // Update status
     esim.status = status;
     
-    // If approved, set activation date, update QR code with personalized message, and simulate SMDP
     if (status === 'activated') {
       const QRCode = require('qrcode');
       
       // Create personalized message
-      const personalizedMessage = `Thank you ${esim.userId.name}! Your eSIM has been activated. Enjoy seamless connectivity with our services.`;
+      const personalizedMessage = `Thank you ${esim.userId.name}! Your eSIM has been activated.`;
       const updatedQrCodeData = `LPA:1$${esim.smdpPlusAddress}$${esim.activationCode}\n\n${personalizedMessage}`;
       
-      // Regenerate QR code image with personalized message
+      // Regenerate QR code
       const updatedQrCodeImage = await QRCode.toDataURL(updatedQrCodeData, {
         errorCorrectionLevel: 'H',
         width: 300,
@@ -105,14 +111,11 @@ exports.updateESIMStatus = async (req, res) => {
         type: 'image/png'
       });
       
-      // Update eSIM with new QR code data
       esim.qrCodeData = updatedQrCodeData;
       esim.qrCodeImage = updatedQrCodeImage;
       esim.activationDate = new Date();
       
       await esim.save();
-      
-      // Simulate the SMDP process for activation
       simulateSMDP(esim._id);
     } else if (status === 'failed') {
       esim.activationDate = null;
@@ -136,7 +139,6 @@ exports.createAdmin = async (req, res) => {
   try {
     const { name, email, password } = req.body;
     
-    // Check if user already exists
     const userExists = await User.findOne({ email });
     if (userExists) {
       return res.status(400).json({ message: 'User already exists' });

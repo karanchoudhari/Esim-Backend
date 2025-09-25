@@ -205,7 +205,7 @@ exports.requestESIM = async (req, res) => {
 
     const activationCode = generateActivationCode();
     const iccid = generateICCID();
-    const smdpPlusAddress = 'smdp.telecom.example.com';
+    const smdpPlusAddress = 'ESIM.telecom.com';
 
     // Get user details for personalized message
     const user = await User.findById(userId);

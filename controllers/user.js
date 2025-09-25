@@ -51,15 +51,15 @@ module.exports.createuser = async (req, res) => {
 };
 module.exports.Loginuser = async (req, res) => {
   try {
-    console.log('=== LOGIN ATTEMPT STARTED ===');
+    // console.log('=== LOGIN ATTEMPT STARTED ===');
     // console.log('Request body:', req.body);
     
     // Debug environment variables
-    console.log('Environment check:');
-    console.log('JWT_SECRET exists:', !!process.env.JWT_SECRET);
-    console.log('JWT_SECRET length:', process.env.JWT_SECRET ? process.env.JWT_SECRET.length : 0);
+    // console.log('Environment check:');
+    // console.log('JWT_SECRET exists:', !!process.env.JWT_SECRET);
+    // console.log('JWT_SECRET length:', process.env.JWT_SECRET ? process.env.JWT_SECRET.length : 0);
     // console.log('DATABASE_URL exists:', !!process.env.DATABASE_URL);
-    console.log('PORT:', process.env.PORT);
+    // console.log('PORT:', process.env.PORT);
     
     // Check if JWT secret is configured
     if (!process.env.JWT_SECRET || process.env.JWT_SECRET.trim() === '') {
@@ -77,7 +77,7 @@ module.exports.Loginuser = async (req, res) => {
     }
     
     const { email, password } = req.body;
-    console.log("login ",req.body);
+    // console.log("login ",req.body);
     
     if (!email || !password) {
       return res.status(400).json({
@@ -89,7 +89,7 @@ module.exports.Loginuser = async (req, res) => {
     // Check database connection state
     const dbState = mongoose.connection.readyState;
     const dbStates = ['disconnected', 'connected', 'connecting', 'disconnecting'];
-    console.log('Database state:', dbState, '(', dbStates[dbState] || 'unknown', ')');
+    // console.log('Database state:', dbState, '(', dbStates[dbState] || 'unknown', ')');
     
     if (dbState !== 1) {
       console.error('ERROR: Database not connected. State:', dbState);
@@ -101,9 +101,9 @@ module.exports.Loginuser = async (req, res) => {
       });
     }
 
-    console.log('Looking for user with email:', email);
+    // console.log('Looking for user with email:', email);
     const user = await User.findOne({ email });
-    console.log('User found:', user ? `Yes (${user.email})` : 'No');
+    // console.log('User found:', user ? `Yes (${user.email})` : 'No');
     
     if (!user) {
       return res.status(401).json({
@@ -115,7 +115,7 @@ module.exports.Loginuser = async (req, res) => {
     // Check if user has password method
     if (typeof user.comparePassword !== 'function') {
       console.error('ERROR: User model missing comparePassword method');
-      console.log('User object methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(user)));
+      // console.log('User object methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(user)));
       return res.status(500).json({
         success: false,
         message: 'Server error: User model configuration issue'
@@ -123,9 +123,9 @@ module.exports.Loginuser = async (req, res) => {
     }
 
     // Check password
-    console.log('Checking password...');
+    // console.log('Checking password...');
     const isPasswordValid = await user.comparePassword(password);
-    console.log('Password valid:', isPasswordValid);
+    // console.log('Password valid:', isPasswordValid);
     
     if (!isPasswordValid) {
       return res.status(401).json({
@@ -137,9 +137,9 @@ module.exports.Loginuser = async (req, res) => {
     // Generate token
     let token;
     try {
-      console.log('Generating JWT token...');
+      // console.log('Generating JWT token...');
       token = generateToken(user);
-      console.log('Token generated successfully');
+      // console.log('Token generated successfully');
     } catch (tokenError) {
       console.error('Token generation error:', tokenError);
       return res.status(500).json({
@@ -150,7 +150,7 @@ module.exports.Loginuser = async (req, res) => {
     }
     
     // Successful login response
-    console.log('=== LOGIN SUCCESSFUL ===');
+    // console.log('=== LOGIN SUCCESSFUL ===');
     res.status(200).json({
       success: true,
       message: 'Login successful',
@@ -275,7 +275,8 @@ exports.forgotPassword = async (req, res) => {
     await user.save();
     
     // Create reset URL (frontend URL)
-    const resetUrl = `http://localhost:5173/reset-password/${resetToken}`;
+  
+    const resetUrl = `https://esim1.netlify.app/reset-password/${resetToken}`;
     
     // Email message
     const message = `
