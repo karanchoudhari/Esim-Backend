@@ -1,101 +1,120 @@
 const nodemailer = require('nodemailer');
 
-const sendEmail = async (options) => {
-  let transporter;
-  
-  try {
-    console.log('🔧 Creating email transporter...');
-    console.log('📧 Sending to:', options.to);
-    console.log('📝 Subject:', options.subject);
-    
-    // Use environment variables for production
-    const emailUser = process.env.EMAIL_USER || 'webdeveloper9354@gmail.com';
-    const emailPass = process.env.EMAIL_PASS || 'mnmx vuqp jybz zovx';
-    
-    console.log('🔐 Using email:', emailUser);
-    
-    // Create a transporter using Gmail with enhanced options
-    transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: emailUser,
-        pass: emailPass
-      },
-      // Enhanced settings for production
-      pool: true,
-      maxConnections: 1,
-      maxMessages: 5,
-      rateDelta: 1000,
-      rateLimit: 5,
-      // Additional security settings
-      secure: true,
-      tls: {
-        rejectUnauthorized: false
-      },
-      debug: true // Enable debug for troubleshooting
-    });
-
-    // Verify transporter configuration
-    console.log('🔍 Verifying email transporter...');
-    await transporter.verify();
-    console.log('✅ Email transporter verified successfully');
-
-    // Define email options with better formatting
-    const mailOptions = {
-      from: `"eSIM Service" <${emailUser}>`,
-      to: options.to,
-      subject: options.subject,
-      html: options.html,
-      // Add text version as fallback
-      text: options.text || options.subject.replace(/<[^>]*>/g, ''),
-      // Priority headers
-      headers: {
-        'X-Priority': '1',
-        'X-MSMail-Priority': 'High',
-        'Importance': 'high'
-      }
-    };
-    
-    console.log('📤 Sending email...');
-    
-    // Send email with timeout
-    const sendPromise = transporter.sendMail(mailOptions);
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Email sending timeout after 30 seconds')), 30000);
-    });
-    
-    const info = await Promise.race([sendPromise, timeoutPromise]);
-    
-    console.log('✅ Email sent successfully: ', info.messageId);
-    console.log('📨 Response:', info.response);
-    
-    return info;
-    
-  } catch (error) {
-    console.error('❌ Detailed email error:', error);
-    console.error('❌ Error code:', error.code);
-    console.error('❌ Error command:', error.command);
-    
-    // More specific error messages
-    if (error.code === 'EAUTH') {
-      throw new Error('Email authentication failed. Please check your email credentials in environment variables.');
-    } else if (error.code === 'ECONNECTION') {
-      throw new Error('Unable to connect to email service. Please check your internet connection.');
-    } else if (error.code === 'EENVELOPE') {
-      throw new Error('Invalid email address or envelope configuration.');
-    } else if (error.message.includes('timeout')) {
-      throw new Error('Email service timeout. Please try again.');
-    } else if (error.code === 'EMESSAGE') {
-      throw new Error('Message configuration error. Please check the email content.');
-    } else {
-      throw new Error(`Email service error: ${error.message}`);
+// Email service configurations
+const emailConfigs = [
+  // Gmail configuration
+  {
+    name: 'Gmail',
+    service: 'gmail',
+    auth: {
+      user: process.env.EMAIL_USER || 'webdeveloper9354@gmail.com',
+      pass: process.env.EMAIL_PASS || 'mnmx vuqp jybz zovx'
     }
-  } finally {
-    // Close transporter if it exists
-    if (transporter) {
-      transporter.close();
+  },
+  // Gmail with alternative settings
+  {
+    name: 'Gmail-Secure',
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false,
+    auth: {
+      user: process.env.EMAIL_USER || 'webdeveloper9354@gmail.com',
+      pass: process.env.EMAIL_PASS || 'mnmx vuqp jybz zovx'
+    },
+    tls: {
+      rejectUnauthorized: false
+    }
+  },
+  // Gmail with SSL
+  {
+    name: 'Gmail-SSL',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
+    auth: {
+      user: process.env.EMAIL_USER || 'webdeveloper9354@gmail.com',
+      pass: process.env.EMAIL_PASS || 'mnmx vuqp jybz zovx'
+    },
+    tls: {
+      rejectUnauthorized: false
     }
   }
+];
+
+const sendEmail = async (options) => {
+  let lastError = null;
+  
+  // Try each email configuration
+  for (const config of emailConfigs) {
+    let transporter;
+    
+    try {
+      console.log(`🔧 Trying ${config.name} configuration...`);
+      console.log('📧 Sending to:', options.to);
+      console.log('📝 Subject:', options.subject);
+      
+      // Create transporter
+      transporter = nodemailer.createTransport({
+        ...config,
+        pool: true,
+        maxConnections: 1,
+        maxMessages: 5,
+        debug: process.env.NODE_ENV === 'production' // Enable debug in production
+      });
+
+      // Verify transporter configuration
+      console.log(`🔍 Verifying ${config.name} transporter...`);
+      await transporter.verify();
+      console.log(`✅ ${config.name} transporter verified successfully`);
+
+      // Define email options
+      const mailOptions = {
+        from: `"eSIM Service" <${config.auth.user}>`,
+        to: options.to,
+        subject: options.subject,
+        html: options.html,
+        text: options.text || options.subject.replace(/<[^>]*>/g, ''),
+        headers: {
+          'X-Priority': '1',
+          'X-MSMail-Priority': 'High',
+          'Importance': 'high'
+        }
+      };
+      
+      console.log(`📤 Sending email via ${config.name}...`);
+      
+      // Send email with timeout
+      const sendPromise = transporter.sendMail(mailOptions);
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Email sending timeout after 30 seconds')), 30000);
+      });
+      
+      const info = await Promise.race([sendPromise, timeoutPromise]);
+      
+      console.log(`✅ Email sent successfully via ${config.name}:`, info.messageId);
+      console.log('📨 Response:', info.response);
+      
+      return info;
+      
+    } catch (error) {
+      lastError = error;
+      console.error(`❌ ${config.name} failed:`, error.message);
+      console.error(`❌ Error code:`, error.code);
+      console.error(`❌ Error command:`, error.command);
+      
+      // Close transporter if it exists
+      if (transporter) {
+        transporter.close();
+      }
+      
+      // Continue to next configuration
+      continue;
+    }
+  }
+  
+  // If all configurations failed
+  console.error('💥 All email configurations failed');
+  throw new Error(`All email services failed. Last error: ${lastError.message}`);
 };
 
 module.exports = sendEmail;
