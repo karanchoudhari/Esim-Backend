@@ -58,45 +58,66 @@ exports.sendEmailOTP = async (req, res) => {
     // Store OTP
     otpStore.set(userId, { otp, expiresAt, phone });
 
-    console.log('🔐 OTP generated for user:', user.email, 'OTP:', otp);
+    console.log('🔐 OTP generated for user:', user.email);
+    console.log('📧 Attempting to send email to:', user.email);
 
-    // Send OTP email with enhanced error handling
-    try {
-      const emailHtml = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f9f9f9; padding: 20px; border-radius: 10px;">
-          <div style="background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-            <h2 style="color: #2c5aa0; text-align: center; margin-bottom: 20px;">eSIM Verification OTP</h2>
-            <p style="color: #555; font-size: 16px;">Dear ${user.name},</p>
-            <p style="color: #555;">Your OTP for eSIM verification is:</p>
-            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 8px; margin: 25px 0; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
-              ${otp}
+    // Send OTP email with enhanced error handling and retry mechanism
+    let emailSent = false;
+    const maxRetries = 2;
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`📤 Email attempt ${attempt}/${maxRetries}`);
+        
+        const emailHtml = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f9f9f9; padding: 20px; border-radius: 10px;">
+            <div style="background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+              <h2 style="color: #2c5aa0; text-align: center; margin-bottom: 20px;">eSIM Verification OTP</h2>
+              <p style="color: #555; font-size: 16px;">Dear ${user.name},</p>
+              <p style="color: #555;">Your OTP for eSIM verification is:</p>
+              <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 8px; margin: 25px 0; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+                ${otp}
+              </div>
+              <p style="color: #777; text-align: center; font-size: 14px;">This OTP is valid for 10 minutes.</p>
+              <p style="color: #777; text-align: center; font-size: 14px;">If you didn't request this, please ignore this email.</p>
             </div>
-            <p style="color: #777; text-align: center; font-size: 14px;">This OTP is valid for 10 minutes.</p>
-            <p style="color: #777; text-align: center; font-size: 14px;">If you didn't request this, please ignore this email.</p>
+            <div style="text-align: center; margin-top: 20px; color: #999; font-size: 12px;">
+              <p>This is an automated message, please do not reply.</p>
+            </div>
           </div>
-          <div style="text-align: center; margin-top: 20px; color: #999; font-size: 12px;">
-            <p>This is an automated message, please do not reply.</p>
-          </div>
-        </div>
-      `;
+        `;
 
-      await sendEmail({
-        to: user.email,
-        subject: 'Your eSIM Verification OTP - Action Required',
-        html: emailHtml,
-        text: `Your eSIM verification OTP is: ${otp}. This OTP is valid for 10 minutes.`
-      });
+        await sendEmail({
+          to: user.email,
+          subject: 'Your eSIM Verification OTP - Action Required',
+          html: emailHtml,
+          text: `Your eSIM verification OTP is: ${otp}. This OTP is valid for 10 minutes.`
+        });
 
-      console.log('✅ Email sent successfully to:', user.email);
+        emailSent = true;
+        console.log('✅ Email sent successfully to:', user.email);
+        break; // Break out of retry loop if successful
 
-    } catch (emailError) {
-      console.error('❌ Email sending failed:', emailError);
+      } catch (emailError) {
+        lastError = emailError;
+        console.error(`❌ Email attempt ${attempt} failed:`, emailError.message);
+        
+        if (attempt < maxRetries) {
+          console.log(`⏳ Retrying in 2 seconds...`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+    }
+
+    if (!emailSent) {
+      console.error('💥 All email attempts failed:', lastError);
       
-      // Don't delete OTP immediately, allow frontend to retry
+      // Don't delete OTP from store, allow frontend to retry
       return res.status(500).json({ 
         success: false,
-        message: 'Failed to send OTP email. Please try again in a moment.',
-        error: emailError.message,
+        message: 'Failed to send OTP email after multiple attempts. Please try again in a moment.',
+        error: lastError.message,
         code: 'EMAIL_SERVICE_ERROR',
         retryable: true
       });
@@ -218,43 +239,63 @@ exports.resendEmailOTP = async (req, res) => {
     // Store OTP
     otpStore.set(userId, { otp, expiresAt, phone });
 
-    console.log('🔐 New OTP generated for resend:', user.email, 'OTP:', otp);
+    console.log('🔐 New OTP generated for resend:', user.email);
 
-    // Send OTP email with enhanced error handling
-    try {
-      const emailHtml = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f9f9f9; padding: 20px; border-radius: 10px;">
-          <div style="background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-            <h2 style="color: #2c5aa0; text-align: center; margin-bottom: 20px;">New eSIM Verification OTP</h2>
-            <p style="color: #555; font-size: 16px;">Dear ${user.name},</p>
-            <p style="color: #555;">Your new OTP for eSIM verification is:</p>
-            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 8px; margin: 25px 0; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
-              ${otp}
+    // Send OTP email with enhanced error handling and retry mechanism
+    let emailSent = false;
+    const maxRetries = 2;
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`📤 Resend email attempt ${attempt}/${maxRetries}`);
+        
+        const emailHtml = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f9f9f9; padding: 20px; border-radius: 10px;">
+            <div style="background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+              <h2 style="color: #2c5aa0; text-align: center; margin-bottom: 20px;">New eSIM Verification OTP</h2>
+              <p style="color: #555; font-size: 16px;">Dear ${user.name},</p>
+              <p style="color: #555;">Your new OTP for eSIM verification is:</p>
+              <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 8px; margin: 25px 0; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+                ${otp}
+              </div>
+              <p style="color: #777; text-align: center; font-size: 14px;">This OTP is valid for 10 minutes.</p>
+              <p style="color: #777; text-align: center; font-size: 14px;">If you didn't request this, please ignore this email.</p>
             </div>
-            <p style="color: #777; text-align: center; font-size: 14px;">This OTP is valid for 10 minutes.</p>
-            <p style="color: #777; text-align: center; font-size: 14px;">If you didn't request this, please ignore this email.</p>
+            <div style="text-align: center; margin-top: 20px; color: #999; font-size: 12px;">
+              <p>This is an automated message, please do not reply.</p>
+            </div>
           </div>
-          <div style="text-align: center; margin-top: 20px; color: #999; font-size: 12px;">
-            <p>This is an automated message, please do not reply.</p>
-          </div>
-        </div>
-      `;
+        `;
 
-      await sendEmail({
-        to: user.email,
-        subject: 'Your New eSIM Verification OTP',
-        html: emailHtml,
-        text: `Your new eSIM verification OTP is: ${otp}. This OTP is valid for 10 minutes.`
-      });
+        await sendEmail({
+          to: user.email,
+          subject: 'Your New eSIM Verification OTP',
+          html: emailHtml,
+          text: `Your new eSIM verification OTP is: ${otp}. This OTP is valid for 10 minutes.`
+        });
 
-      console.log('✅ Resend email sent successfully to:', user.email);
+        emailSent = true;
+        console.log('✅ Resend email sent successfully to:', user.email);
+        break; // Break out of retry loop if successful
 
-    } catch (emailError) {
-      console.error('❌ Resend email sending failed:', emailError);
+      } catch (emailError) {
+        lastError = emailError;
+        console.error(`❌ Resend email attempt ${attempt} failed:`, emailError.message);
+        
+        if (attempt < maxRetries) {
+          console.log(`⏳ Retrying in 2 seconds...`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+    }
+
+    if (!emailSent) {
+      console.error('💥 All resend email attempts failed:', lastError);
       return res.status(500).json({ 
         success: false,
-        message: 'Failed to resend OTP email. Please try again.',
-        error: emailError.message,
+        message: 'Failed to resend OTP email after multiple attempts. Please try again.',
+        error: lastError.message,
         code: 'EMAIL_SERVICE_ERROR',
         retryable: true
       });
@@ -407,7 +448,6 @@ function generateActivationCode() {
 function generateICCID() {
   return '89' + Math.random().toString().substring(2, 21);
 }
-
 // const ESIM = require('../models/ESIM');
 // const User = require('../models/User');
 // const QRCode = require('qrcode');
