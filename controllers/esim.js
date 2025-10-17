@@ -8,12 +8,71 @@ const crypto = require('crypto');
 // Store OTPs temporarily (in production, use Redis)
 const otpStore = new Map();
 
+// Enhanced email sending with retry logic
+const sendOTPEmailWithRetry = async (user, otp, isResend = false) => {
+  const maxRetries = 2;
+  let lastError = null;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`📧 Email send attempt ${attempt}/${maxRetries}`);
+      
+      const emailHtml = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f9f9f9; padding: 20px; border-radius: 10px;">
+          <div style="background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+            <h2 style="color: #2c5aa0; text-align: center; margin-bottom: 20px;">${isResend ? 'New eSIM Verification OTP' : 'eSIM Verification OTP'}</h2>
+            <p style="color: #555; font-size: 16px;">Dear ${user.name},</p>
+            <p style="color: #555;">Your OTP for eSIM verification is:</p>
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 8px; margin: 25px 0; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+              ${otp}
+            </div>
+            <p style="color: #777; text-align: center; font-size: 14px;">This OTP is valid for 10 minutes.</p>
+            <p style="color: #777; text-align: center; font-size: 14px;">If you didn't request this, please ignore this email.</p>
+          </div>
+          <div style="text-align: center; margin-top: 20px; color: #999; font-size: 12px;">
+            <p>This is an automated message, please do not reply.</p>
+          </div>
+        </div>
+      `;
+
+      await sendEmail({
+        to: user.email,
+        subject: isResend ? 'Your New eSIM Verification OTP' : 'Your eSIM Verification OTP - Action Required',
+        html: emailHtml,
+        text: `Your eSIM verification OTP is: ${otp}. This OTP is valid for 10 minutes.`
+      });
+
+      console.log('✅ Email sent successfully to:', user.email);
+      return true;
+      
+    } catch (emailError) {
+      lastError = emailError;
+      console.error(`❌ Email attempt ${attempt} failed:`, emailError.message);
+      
+      if (attempt < maxRetries) {
+        console.log(`🔄 Retrying email in 2 seconds...`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    }
+  }
+  
+  throw lastError;
+};
+
 exports.sendEmailOTP = async (req, res) => {
   try {
     console.log('📞 Send OTP request received:', { userId: req.user.id, phone: req.body.phone });
     
     const userId = req.user.id;
     const { phone } = req.body;
+
+    // Validate phone number
+    if (!phone || phone.length < 10) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Valid phone number is required' 
+      });
+    }
 
     // Check KYC status
     const kyc = await KYC.findOne({ userId });
@@ -59,65 +118,20 @@ exports.sendEmailOTP = async (req, res) => {
     otpStore.set(userId, { otp, expiresAt, phone });
 
     console.log('🔐 OTP generated for user:', user.email);
-    console.log('📧 Attempting to send email to:', user.email);
 
-    // Send OTP email with enhanced error handling and retry mechanism
-    let emailSent = false;
-    const maxRetries = 2;
-    let lastError = null;
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        console.log(`📤 Email attempt ${attempt}/${maxRetries}`);
-        
-        const emailHtml = `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f9f9f9; padding: 20px; border-radius: 10px;">
-            <div style="background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-              <h2 style="color: #2c5aa0; text-align: center; margin-bottom: 20px;">eSIM Verification OTP</h2>
-              <p style="color: #555; font-size: 16px;">Dear ${user.name},</p>
-              <p style="color: #555;">Your OTP for eSIM verification is:</p>
-              <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 8px; margin: 25px 0; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
-                ${otp}
-              </div>
-              <p style="color: #777; text-align: center; font-size: 14px;">This OTP is valid for 10 minutes.</p>
-              <p style="color: #777; text-align: center; font-size: 14px;">If you didn't request this, please ignore this email.</p>
-            </div>
-            <div style="text-align: center; margin-top: 20px; color: #999; font-size: 12px;">
-              <p>This is an automated message, please do not reply.</p>
-            </div>
-          </div>
-        `;
-
-        await sendEmail({
-          to: user.email,
-          subject: 'Your eSIM Verification OTP - Action Required',
-          html: emailHtml,
-          text: `Your eSIM verification OTP is: ${otp}. This OTP is valid for 10 minutes.`
-        });
-
-        emailSent = true;
-        console.log('✅ Email sent successfully to:', user.email);
-        break; // Break out of retry loop if successful
-
-      } catch (emailError) {
-        lastError = emailError;
-        console.error(`❌ Email attempt ${attempt} failed:`, emailError.message);
-        
-        if (attempt < maxRetries) {
-          console.log(`⏳ Retrying in 2 seconds...`);
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        }
-      }
-    }
-
-    if (!emailSent) {
-      console.error('💥 All email attempts failed:', lastError);
+    // Send OTP email with enhanced retry logic
+    try {
+      await sendOTPEmailWithRetry(user, otp, false);
+    } catch (emailError) {
+      console.error('💥 All email attempts failed:', emailError);
       
-      // Don't delete OTP from store, allow frontend to retry
+      // Clear OTP since sending failed
+      otpStore.delete(userId);
+      
       return res.status(500).json({ 
         success: false,
-        message: 'Failed to send OTP email after multiple attempts. Please try again in a moment.',
-        error: lastError.message,
+        message: 'Failed to send OTP email. Please try again in a moment.',
+        error: process.env.NODE_ENV === 'development' ? emailError.message : 'Email service temporarily unavailable',
         code: 'EMAIL_SERVICE_ERROR',
         retryable: true
       });
@@ -135,7 +149,7 @@ exports.sendEmailOTP = async (req, res) => {
     res.status(500).json({ 
       success: false,
       message: 'Error sending OTP', 
-      error: error.message,
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
       code: 'SERVER_ERROR'
     });
   }
@@ -147,6 +161,14 @@ exports.verifyEmailOTP = async (req, res) => {
     const { otp, phone } = req.body;
 
     console.log('🔍 Verify OTP request:', { userId, otpLength: otp?.length });
+
+    // Validate OTP format
+    if (!otp || otp.length !== 6 || !/^\d+$/.test(otp)) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Invalid OTP format. OTP must be 6 digits.' 
+      });
+    }
 
     // Get stored OTP data
     const storedData = otpStore.get(userId);
@@ -167,6 +189,7 @@ exports.verifyEmailOTP = async (req, res) => {
     }
 
     if (storedData.otp !== otp) {
+      // Track failed attempts (optional enhancement)
       return res.status(400).json({ 
         success: false,
         message: 'Invalid OTP. Please try again.' 
@@ -211,7 +234,7 @@ exports.verifyEmailOTP = async (req, res) => {
     res.status(500).json({ 
       success: false,
       message: 'Error verifying OTP', 
-      error: error.message 
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 };
@@ -222,6 +245,14 @@ exports.resendEmailOTP = async (req, res) => {
     const { phone } = req.body;
 
     console.log('🔄 Resend OTP request:', { userId });
+
+    // Validate phone number
+    if (!phone || phone.length < 10) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Valid phone number is required' 
+      });
+    }
 
     // Get user details
     const user = await User.findById(userId);
@@ -241,61 +272,19 @@ exports.resendEmailOTP = async (req, res) => {
 
     console.log('🔐 New OTP generated for resend:', user.email);
 
-    // Send OTP email with enhanced error handling and retry mechanism
-    let emailSent = false;
-    const maxRetries = 2;
-    let lastError = null;
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        console.log(`📤 Resend email attempt ${attempt}/${maxRetries}`);
-        
-        const emailHtml = `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f9f9f9; padding: 20px; border-radius: 10px;">
-            <div style="background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-              <h2 style="color: #2c5aa0; text-align: center; margin-bottom: 20px;">New eSIM Verification OTP</h2>
-              <p style="color: #555; font-size: 16px;">Dear ${user.name},</p>
-              <p style="color: #555;">Your new OTP for eSIM verification is:</p>
-              <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 8px; margin: 25px 0; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
-                ${otp}
-              </div>
-              <p style="color: #777; text-align: center; font-size: 14px;">This OTP is valid for 10 minutes.</p>
-              <p style="color: #777; text-align: center; font-size: 14px;">If you didn't request this, please ignore this email.</p>
-            </div>
-            <div style="text-align: center; margin-top: 20px; color: #999; font-size: 12px;">
-              <p>This is an automated message, please do not reply.</p>
-            </div>
-          </div>
-        `;
-
-        await sendEmail({
-          to: user.email,
-          subject: 'Your New eSIM Verification OTP',
-          html: emailHtml,
-          text: `Your new eSIM verification OTP is: ${otp}. This OTP is valid for 10 minutes.`
-        });
-
-        emailSent = true;
-        console.log('✅ Resend email sent successfully to:', user.email);
-        break; // Break out of retry loop if successful
-
-      } catch (emailError) {
-        lastError = emailError;
-        console.error(`❌ Resend email attempt ${attempt} failed:`, emailError.message);
-        
-        if (attempt < maxRetries) {
-          console.log(`⏳ Retrying in 2 seconds...`);
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        }
-      }
-    }
-
-    if (!emailSent) {
-      console.error('💥 All resend email attempts failed:', lastError);
+    // Send OTP email with enhanced retry logic
+    try {
+      await sendOTPEmailWithRetry(user, otp, true);
+    } catch (emailError) {
+      console.error('💥 All resend email attempts failed:', emailError);
+      
+      // Clear OTP since sending failed
+      otpStore.delete(userId);
+      
       return res.status(500).json({ 
         success: false,
-        message: 'Failed to resend OTP email after multiple attempts. Please try again.',
-        error: lastError.message,
+        message: 'Failed to resend OTP email. Please try again.',
+        error: process.env.NODE_ENV === 'development' ? emailError.message : 'Email service temporarily unavailable',
         code: 'EMAIL_SERVICE_ERROR',
         retryable: true
       });
@@ -311,7 +300,7 @@ exports.resendEmailOTP = async (req, res) => {
     res.status(500).json({ 
       success: false,
       message: 'Error resending OTP', 
-      error: error.message,
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
       code: 'SERVER_ERROR'
     });
   }
@@ -383,7 +372,7 @@ exports.requestESIM = async (req, res) => {
     res.status(500).json({ 
       success: false,
       message: 'Error requesting eSIM', 
-      error: error.message 
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 };
@@ -416,7 +405,7 @@ exports.getESIMStatus = async (req, res) => {
     res.status(500).json({ 
       success: false,
       message: 'Error fetching eSIM status', 
-      error: error.message 
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 };
@@ -435,7 +424,7 @@ exports.getESIMsByUser = async (req, res) => {
     res.status(500).json({ 
       success: false,
       message: 'Error fetching eSIMs', 
-      error: error.message 
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 };
@@ -448,6 +437,7 @@ function generateActivationCode() {
 function generateICCID() {
   return '89' + Math.random().toString().substring(2, 21);
 }
+
 // const ESIM = require('../models/ESIM');
 // const User = require('../models/User');
 // const QRCode = require('qrcode');

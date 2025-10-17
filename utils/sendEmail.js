@@ -1,19 +1,10 @@
 const nodemailer = require('nodemailer');
 
-// Email service configurations
+// Email service configurations with optimized timeouts
 const emailConfigs = [
-  // Gmail configuration
+  // Primary: Gmail with optimized settings
   {
-    name: 'Gmail',
-    service: 'gmail',
-    auth: {
-      user: process.env.EMAIL_USER || 'webdeveloper9354@gmail.com',
-      pass: process.env.EMAIL_PASS || 'mnmx vuqp jybz zovx'
-    }
-  },
-  // Gmail with alternative settings
-  {
-    name: 'Gmail-Secure',
+    name: 'Gmail-Optimized',
     host: 'smtp.gmail.com',
     port: 587,
     secure: false,
@@ -21,11 +12,17 @@ const emailConfigs = [
       user: process.env.EMAIL_USER || 'webdeveloper9354@gmail.com',
       pass: process.env.EMAIL_PASS || 'mnmx vuqp jybz zovx'
     },
+    connectionTimeout: 15000, // 15 seconds connection timeout
+    greetingTimeout: 15000,   // 15 seconds greeting timeout
+    socketTimeout: 30000,     // 30 seconds socket timeout
     tls: {
       rejectUnauthorized: false
-    }
+    },
+    pool: true,
+    maxConnections: 1,
+    maxMessages: 5
   },
-  // Gmail with SSL
+  // Fallback: Gmail with SSL
   {
     name: 'Gmail-SSL',
     host: 'smtp.gmail.com',
@@ -35,36 +32,57 @@ const emailConfigs = [
       user: process.env.EMAIL_USER || 'webdeveloper9354@gmail.com',
       pass: process.env.EMAIL_PASS || 'mnmx vuqp jybz zovx'
     },
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 30000,
     tls: {
       rejectUnauthorized: false
     }
+  },
+  // Emergency: Gmail with service shortcut
+  {
+    name: 'Gmail-Service',
+    service: 'gmail',
+    auth: {
+      user: process.env.EMAIL_USER || 'webdeveloper9354@gmail.com',
+      pass: process.env.EMAIL_PASS || 'mnmx vuqp jybz zovx'
+    },
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 30000
   }
 ];
 
 const sendEmail = async (options) => {
   let lastError = null;
+  let attempt = 0;
   
   // Try each email configuration
   for (const config of emailConfigs) {
-    let transporter;
+    attempt++;
+    let transporter = null;
     
     try {
+      console.log(`📧 Email attempt ${attempt}/${emailConfigs.length}`);
       console.log(`🔧 Trying ${config.name} configuration...`);
       console.log('📧 Sending to:', options.to);
       console.log('📝 Subject:', options.subject);
       
-      // Create transporter
+      // Create transporter with timeout settings
       transporter = nodemailer.createTransport({
         ...config,
-        pool: true,
-        maxConnections: 1,
-        maxMessages: 5,
-        debug: process.env.NODE_ENV === 'production' // Enable debug in production
+        debug: process.env.NODE_ENV !== 'production', // Debug in development only
+        logger: process.env.NODE_ENV !== 'production'
       });
 
-      // Verify transporter configuration
+      // Verify transporter with shorter timeout
       console.log(`🔍 Verifying ${config.name} transporter...`);
-      await transporter.verify();
+      await Promise.race([
+        transporter.verify(),
+        new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Transporter verification timeout after 10 seconds')), 10000);
+        })
+      ]);
       console.log(`✅ ${config.name} transporter verified successfully`);
 
       // Define email options
@@ -83,38 +101,51 @@ const sendEmail = async (options) => {
       
       console.log(`📤 Sending email via ${config.name}...`);
       
-      // Send email with timeout
+      // Send email with aggressive timeout
       const sendPromise = transporter.sendMail(mailOptions);
       const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Email sending timeout after 30 seconds')), 30000);
+        setTimeout(() => reject(new Error('Email sending timeout after 20 seconds')), 20000);
       });
       
       const info = await Promise.race([sendPromise, timeoutPromise]);
       
-      console.log(`✅ Email sent successfully via ${config.name}:`, info.messageId);
-      console.log('📨 Response:', info.response);
+      console.log(`✅ Email sent successfully via ${config.name}`);
+      console.log('📨 Message ID:', info.messageId);
+      
+      // Close transporter
+      if (transporter) {
+        transporter.close();
+      }
       
       return info;
       
     } catch (error) {
       lastError = error;
       console.error(`❌ ${config.name} failed:`, error.message);
-      console.error(`❌ Error code:`, error.code);
-      console.error(`❌ Error command:`, error.command);
       
       // Close transporter if it exists
       if (transporter) {
-        transporter.close();
+        try {
+          transporter.close();
+        } catch (closeError) {
+          console.error('Error closing transporter:', closeError.message);
+        }
       }
       
-      // Continue to next configuration
-      continue;
+      // If this is the last attempt, throw the error
+      if (attempt === emailConfigs.length) {
+        break;
+      }
+      
+      // Wait briefly before trying next configuration
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
   }
   
   // If all configurations failed
-  console.error('💥 All email configurations failed');
-  throw new Error(`All email services failed. Last error: ${lastError.message}`);
+  const errorMessage = `All email services failed after ${attempt} attempts. Last error: ${lastError?.message || 'Unknown error'}`;
+  console.error('💥', errorMessage);
+  throw new Error(errorMessage);
 };
 
 module.exports = sendEmail;
