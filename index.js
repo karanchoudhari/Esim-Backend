@@ -14,7 +14,8 @@ const messageRoute = require("./routes/message.js")
 const dbConnect = require('./config/database');
 
 require('dotenv').config();
-const PORT = process.env.PORT || 4000;
+// const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT;
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
