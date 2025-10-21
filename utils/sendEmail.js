@@ -135,41 +135,46 @@
 // };
 
 // module.exports = sendEmail;
-
 const nodemailer = require('nodemailer');
 
 const sendEmail = async (options) => {
   try {
-    // Create a transporter using Gmail
-    const transporter = nodemailer.createTransport({   // ✅ correct function
-      // service: 'gmail',
+    const transporter = nodemailer.createTransport({
       host: 'smtp.gmail.com',
-      port: 465,
-      secure: true,
+      port: 587, // Try port 587 instead of 465
+      secure: false, // false for port 587
       auth: {
-      user: process.env.EMAIL_USER || 'webdeveloper9354@gmail.com',
-      pass: process.env.EMAIL_PASS || 'mnmx vuqp jybz zovx'
-    }
-      // auth: {
-      //   user: 'webdeveloper9354@gmail.com',
-      //   pass: 'mnmx vuqp jybz zovx' // Your Gmail App Password
-      // }
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
+      connectionTimeout: 10000, // 10 seconds
+      greetingTimeout: 10000,
+      socketTimeout: 10000,
+      // Add TLS options
+      tls: {
+        rejectUnauthorized: false
+      }
     });
 
-    // Define email options
+    // Verify connection
+    await transporter.verify();
+
     const mailOptions = {
-      from: 'webdeveloper9354@gmail.com',
+      from: `"Your App Name" <${process.env.EMAIL_USER}>`,
       to: options.to,
       subject: options.subject,
-      html: options.html
+      html: options.html,
     };
 
-    // Send email
     const info = await transporter.sendMail(mailOptions);
-    // console.log('✅ Email sent: ', info.messageId);
+    console.log('✅ Email sent:', info.messageId);
     return info;
   } catch (error) {
-    console.error('❌ Error sending email: ', error);
+    console.error('❌ Email error details:', {
+      code: error.code,
+      command: error.command,
+      message: error.message
+    });
     throw new Error('Email could not be sent');
   }
 };
